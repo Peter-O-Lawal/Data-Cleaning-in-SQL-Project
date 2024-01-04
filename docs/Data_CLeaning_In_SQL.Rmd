@@ -1,0 +1,348 @@
+---
+title: "Data Cleaning In SQL Project"
+author: "LAWAL Peter"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## __Introduction__
+
+This is a data cleaning SQL based project using the Nashville Housing dataset. 
+This purpose of this project is to showcase my data cleaning skills in SQL. Although this report and code chuncks are
+viewed in an`RMD` formating, this project had been previously executed in Microsoft SQL Server Management Studio. 
+
+#### __Installing Packages and Libraries__
+
+for the purpose of this project, certain packages and libraries will be loaded to make `R` compatible with `MSSQL` databases connections. For this project, the `DBI`, `odbc` and `RODBC` packages will be installed and their subsequent packages loaded. 
+```{r}
+library(DBI)
+```
+```{r loading libraries}
+library(odbc)
+```
+```{r}
+library(RODBC)
+```
+
+#### __Connecting to the datbase Server__ 
+
+a database connection will be established by creating a `DSN` connection to SQL_Server locally hosted on my desktop. 
+This connection will be named `con2` 
+
+```{r}
+con2 <- dbConnect(odbc :: odbc(), "SQL_Server_DSN")
+```
+
+#### viewiing the table to be worked with
+
+using a basic SQL query, I will preview the data provided in the database
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Select * 
+From [NashvilleHousing2]
+```
+
+
+the next line of queries is to order the data by the land use type. The result is that the dataset is ordered by the land use type in alphabetical order. 
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Select * 
+From NashvilleHousing2
+Order by LandUse
+```
+
+Changing the format of saledate in raw data from datetime format to date as time is not neccesary in this data, also, the presence of time makes the data hard to read. 
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Select 
+SaleDate, CONVERT(date, SaleDate) as NewSaleDate
+from NashvilleHousing2
+```
+We see the result of the query as two columns containing the NewSaleDate column 
+
+
+the `NashvilleHousing2 dataset will then be updated with the `update` function  
+```{sql connection=con2, echo=T, warning=F, message=F}
+Update NashvilleHousing2
+Set SaleDate = CONVERT(Date, SaleDate)
+```
+
+a new column named `SaleDateConverted` is also added to allow for readability of the data
+```{sql connection=con2, echo=T, warning=F, message=F}
+Alter Table NashvilleHousing2
+Add SaleDateConverted Date;
+```
+
+the table will then be updated with the code chunk below and we can view the update of the table with the subsequent code chunk. 
+```{sql connection=con2, echo=T, warning=F, message=F}
+Update NashvilleHousing2
+Set SaleDateConverted = Convert(date, SaleDate)
+```
+
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Select *
+From NashvilleHousing2
+```
+
+The table has been confirmed updated with the neccesary column. 
+
+
+Next, I will like to see what datapoints have nulls in them and how they can be fixed. 
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Select *
+From NashvilleHousing2
+Where PropertyAddress is null
+```
+
+29 rows of data where found where the property address is null. 
+
+In ordr to figure out if the null data stemmed from simple ommisions, I use a join statement to check for identical parcelIDs and join them. 
+```{sql connection=con2, echo=T, warning=F, message=F}
+Select a.ParcelID, a.PropertyAddress, b.ParcelID, b.PropertyAddress
+From Portfolio_Project..NashvilleHousing2 a
+Join Portfolio_Project..NashvilleHousing2 b
+On a.ParcelID = b.ParcelID
+	And a.[UniqueID ] <> b.[UniqueID ]
+	Where a.PropertyAddress is null
+
+```
+
+The result is a table where property addresses have been parsed based on the parcel IDs found for properties in the dataset. 
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Select a.ParcelID, a.PropertyAddress, b.ParcelID, b.PropertyAddress, ISNULL(a.PropertyAddress, b.PropertyAddress )
+From Portfolio_Project..NashvilleHousing2 a
+Join Portfolio_Project..NashvilleHousing2 b
+On a.ParcelID = b.ParcelID
+	And a.[UniqueID ] <> b.[UniqueID ]
+	Where a.PropertyAddress is null
+```
+
+with the below code chunk, the dataset will be updated using the datapoints gotten using the unique ID 
+```{sql connection=con2, echo=T, warning=F, message=F}
+Update a
+Set PropertyAddress = ISNULL(a.PropertyAddress, b.PropertyAddress)
+From Portfolio_Project..NashvilleHousing2 a
+Join Portfolio_Project..NashvilleHousing2 b
+	On a.ParcelID = b.ParcelID
+	and	 a.[UniqueID ] <> b.[UniqueID ]
+		WHEre a.PropertyAddress is null 
+```
+
+I will then check to confirm the dataset has been cleaned 
+```{sql connection=con2, echo=T, warning=F, message=F}
+Select *
+		From NashvilleHousing2
+		Where PropertyAddress is null 
+```
+all null datapoints have been corrected for the property address. 
+
+Up next, I will break the property id into seperate columns for readability
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Select PropertyAddress
+From NashvilleHousing2
+```
+
+I will seperate the address into seperate columns using the comma seperator in the `CHARINDEX` function 
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Select 
+SUBSTRING (PropertyAddress, 1, CHARINDEX(',', PropertyAddress)) as Address
+From NashvilleHousing2
+```
+
+the above chunk splits just the first part of the address line 
+
+the next code chunk will split the address line by two places 
+```{sql connection=con2, echo=T, warning=F, message=F}
+Select 
+SUBSTRING (PropertyAddress, 1, CHARINDEX(',', PropertyAddress)-1) as Address,
+Substring (PropertyAddress, CharIndex(',', PropertyAddress) + 1, Len(PropertyAddress)) as Address
+From NashvilleHousing2
+```
+
+I will then update the table with the next code chunks 
+`nvarchar` specifies the formatting of the data in the column that is being created. 
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Alter Table NashvilleHousing2
+Add PropertySplitAddress nvarchar(225);
+```
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Update NashvilleHousing2
+Set PropertySplitAddress = SUBSTRING (PropertyAddress, 1, CHARINDEX(',', PropertyAddress)-1)
+```
+```{sql connection=con2, echo=T, warning=F, message=F}
+Alter Table NashvilleHousing2
+Add PropertyCity nvarchar(225);
+```
+```{sql connection=con2, echo=T, warning=F, message=F}
+Update NashvilleHousing2
+Set PropertyCity = Substring (PropertyAddress, CharIndex(',', PropertyAddress) + 1, Len(PropertyAddress))
+```
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Select *
+From NashvilleHousing
+```
+The same operation that was performed with property address above will also be performed on the owner address, but with the `PARSENAME` function. 
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Select OwnerAddress
+From NashvilleHousing2
+```
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Select 
+PARSENAME(Replace(OwnerAddress, ',', '.'), 3), 
+PARSENAME(Replace(OwnerAddress, ',', '.'), 2) ,
+PARSENAME(Replace(OwnerAddress, ',', '.'), 1) 
+From NashvilleHousing2
+```
+Now that the effect of the above functions is known, the table will then be updated 
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Alter Table NashvilleHousing2
+Add OwnerAddressSplit nvarchar(225);
+```
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Update NashvilleHousing2
+Set OwnerAddressSplit = PARSENAME(Replace(OwnerAddress, ',', '.'), 3) 
+```
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Alter Table NashvilleHousing2
+Add OwnerAddressCity nvarchar(225);
+```
+
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Update NashvilleHousing2
+Set OwnerAddressCity = PARSENAME(Replace(OwnerAddress, ',', '.'), 2) 
+```
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Alter Table NashvilleHousing2
+Add OwnerAddressState nvarchar(225);
+```
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Update NashvilleHousing2
+Set OwnerAddressState= PARSENAME(Replace(OwnerAddress, ',', '.'), 1) 
+```
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Select *
+From NashvilleHousing
+```
+
+Investigating the Data further, I found in the SoldAsVacant column some entries are in the forms yes, no, Y and N, to not skew the data, or have errors, I changed them to a consistent form Yes and No 
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Select Distinct (SoldAsVacant), Count(SoldAsVacant)
+From NashvilleHousing2 
+Group by SoldAsVacant
+Order by 2 
+```
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Select
+SoldAsVacant
+, Case WHEN SoldAsVacant = 'Y' Then 'Yes'
+		when SoldAsVacant = 'N' then 'No' 
+		Else SoldAsVacant
+		END
+from NashvilleHousing2
+```
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+Update 
+NashvilleHousing2
+Set SoldAsVacant = Case WHEN SoldAsVacant = 'Y' Then 'Yes'
+		when SoldAsVacant = 'N' then 'No' 
+		Else SoldAsVacant
+		END
+```
+
+The table has been updated with the corrections that were needed. 
+
+Next up I will be removing duplicates within the dataset  and creating a Common Table Expression `CTE` 
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+With RowNumCTE As(
+Select *,
+	ROW_NUMBER () Over (
+	Partition By ParcelID, 
+				PropertyAddress,
+				SalePrice,
+				SaleDate,
+				LegalReference
+				Order by 
+					UniqueID) row_num
+From 
+NashvilleHousing2
+--Order by ParcelID
+)
+--
+Select *
+from RowNumCTE
+Where row_num > 1 
+Order by PropertyAddress
+
+```
+
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+With RowNumCTE As(
+Select *,
+	ROW_NUMBER () Over (
+	Partition By ParcelID, 
+				PropertyAddress,
+				SalePrice,
+				SaleDate,
+				LegalReference
+				Order by 
+					UniqueID) row_num
+From 
+NashvilleHousing2
+--Order by ParcelID
+)
+
+
+DELETE
+from RowNumCTE
+Where row_num > 1 
+
+```
+
+
+Finally as part of the data cleaning, unwanted columns will be removed from the table such as `OwnerName` to anonymize the data and protect privacy of owners, and the OwnerAddress and OwnerAddressCity
+```{sql connection=con2, echo=T, warning=F, message=F}
+Select *
+From NashvilleHousing2 
+```
+
+```{sql connection=con2, echo=T, warning=F, message=F}
+ALTER TABle 
+NashvilleHousing2
+drop column OwnerAddress, OwnerName, OwnerAddressCity, OwnerAddressSplit
+```
+
+
+I have now come to the end of the operation, and the cleaned data can then be viewed with the code chunk below 
+```{sql connection=con2, echo=T, warning=F, message=F}
+Select *
+From NashvilleHousing2 
+```
+
